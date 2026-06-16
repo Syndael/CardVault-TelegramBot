@@ -256,6 +256,11 @@ def get_product_tracking(product_id: int) -> list[dict]:
     return items
 
 
+def get_inventory_files(inventory_id: int) -> list[dict]:
+    data = _get(f"/files/by-inventory/{inventory_id}")
+    return data if isinstance(data, list) else []
+
+
 def get_latest_price(inventory_id: int) -> dict | None:
     data = _get("/inventory-price-history/", params={"inventory_id": inventory_id, "page": 1, "per_page": 1})
     if not data:

@@ -22,13 +22,39 @@ def _resolve_name(item: dict, languages_by_id: dict[int, dict]) -> str:
     return best or (item.get("product") or {}).get("product_number") or "\u2014"
 
 
+def _resolve_alt_name(item: dict, languages_by_id: dict[int, dict]) -> str | None:
+    translations = (item.get("product") or {}).get("translations", [])
+    inv_lang_id = (item.get("language") or {}).get("id")
+    main_name = _resolve_name(item, languages_by_id)
+
+    best = None
+    best_priority = 999
+    for t in translations:
+        lang_id = t.get("language_id")
+        if lang_id == inv_lang_id:
+            continue
+        if not t.get("name") or t["name"] == main_name:
+            continue
+        lang = languages_by_id.get(lang_id)
+        priority = lang.get("priority_order", 999) if lang else 999
+        if priority < best_priority:
+            best = t["name"]
+            best_priority = priority
+
+    return best
+
+
 def fmt_list_item(item: dict, languages_by_id: dict[int, dict]) -> str:
     inv_id = item["id"]
     code = (item.get("collection") or {}).get("code", "")
     number = (item.get("product") or {}).get("product_number", "")
     name = _resolve_name(item, languages_by_id)
+    alt = _resolve_alt_name(item, languages_by_id)
 
-    return f"<b>{inv_id}</b> (<i>{code}</i> {number}) {name}"
+    parts = [f"<b>{inv_id}</b> (<i>{code}</i> {number}) {name}"]
+    if alt:
+        parts.append(f"({alt})")
+    return " ".join(parts)
 
 
 def fmt_detail(item: dict, urls: list[dict], languages_by_id: dict[int, dict]) -> str:
@@ -106,7 +132,15 @@ def list_keyboard(items: list[dict], languages_by_id: dict[int, dict]) -> Inline
     buttons = []
     for item in items:
         inv_id = item["id"]
+        code = (item.get("collection") or {}).get("code", "")
+        number = (item.get("product") or {}).get("product_number", "")
         name = _resolve_name(item, languages_by_id)
-        label = f"{inv_id} \u2014 {name[:40]}"
+        alt = _resolve_alt_name(item, languages_by_id)
+
+        label = f"({code} {number}) {name}"
+        if alt:
+            label += f" ({alt})"
+        if len(label) > 60:
+            label = label[:57] + "..."
         buttons.append([InlineKeyboardButton(label, callback_data=f"d:{inv_id}")])
     return InlineKeyboardMarkup(buttons)

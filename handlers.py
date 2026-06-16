@@ -116,23 +116,39 @@ async def _send_detail(msg, context, inv_id: int):
     if extra:
         text += "\n" + "\n".join(extra)
 
-    inv_img = item.get("inventory_image_url")
-    prod_img = item.get("product_image_url")
-    _log_direct("DEBUG", f"inv#{inv_id} inventory_image_url={inv_img} product_image_url={prod_img}")
+    inv_files = api_client.get_inventory_files(inv_id)
+    _log_direct("DEBUG", f"inv#{inv_id} inventory_files={len(inv_files)}")
 
-    img_url = inv_img or prod_img
-    if img_url:
-        full_url = api_client.resolve_url(img_url)
-        _log_direct("DEBUG", f"downloading photo: {full_url}")
-        img_data = api_client.download_file(full_url)
-        if img_data:
-            try:
-                await msg.reply_document(document=img_data, filename=f"inv_{inv_id}.jpg")
-                _log_direct("DEBUG", "photo sent OK")
-            except Exception as e:
-                _log_direct("ERROR", f"photo send failed: {e}")
-        else:
-            _log_direct("DEBUG", "download returned no data")
+    if inv_files:
+        for f in inv_files:
+            fid = f.get("id")
+            fname = f.get("stored_name") or f.get("original_name") or f"inv_{inv_id}.jpg"
+            url = api_client.get_file_url(fid)
+            _log_direct("DEBUG", f"downloading inv file #{fid}: {url}")
+            img_data = api_client.download_file(url)
+            if img_data:
+                try:
+                    await msg.reply_document(document=img_data, filename=fname)
+                    _log_direct("DEBUG", f"inv file #{fid} sent OK")
+                except Exception as e:
+                    _log_direct("ERROR", f"inv file #{fid} send failed: {e}")
+            else:
+                _log_direct("DEBUG", f"inv file #{fid} download returned no data")
+    else:
+        prod_img = item.get("product_image_url")
+        _log_direct("DEBUG", f"inv#{inv_id} no inventory files, fallback to product_image_url={prod_img}")
+        if prod_img:
+            full_url = api_client.resolve_url(prod_img)
+            _log_direct("DEBUG", f"downloading product photo: {full_url}")
+            img_data = api_client.download_file(full_url)
+            if img_data:
+                try:
+                    await msg.reply_document(document=img_data, filename=f"inv_{inv_id}.jpg")
+                    _log_direct("DEBUG", "product photo sent OK")
+                except Exception as e:
+                    _log_direct("ERROR", f"product photo send failed: {e}")
+            else:
+                _log_direct("DEBUG", "product photo download returned no data")
 
     await msg.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
