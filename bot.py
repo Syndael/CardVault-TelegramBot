@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
 
 import api_client
-from handlers import cmd_n, cmd_id, callback_handler, unknown_handler, text_handler
+from handlers import cmd_n, cmd_s, cmd_id, callback_handler, unknown_handler, text_handler
 from user_logger import init_user_logger
 
 logging.basicConfig(
@@ -34,6 +34,7 @@ def main():
     logger.info("User interaction log: %s", log_file)
 
     app.add_handler(CommandHandler("n", cmd_n))
+    app.add_handler(CommandHandler("s", cmd_s))
     app.add_handler(CommandHandler("id", cmd_id))
     app.add_handler(CallbackQueryHandler(callback_handler))
 

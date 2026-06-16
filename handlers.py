@@ -29,6 +29,20 @@ async def cmd_n(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     context.user_data["search_name"] = query
+    context.user_data["cross_search"] = False
+    await _send_list(update.message, context)
+
+
+@require_auth
+async def cmd_s(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = " ".join(context.args) if context.args else ""
+    _log_direct("INFO", f"[{_user_info(update)}] /s {query}")
+    if not query:
+        await update.message.reply_text("Uso: /s <texto>")
+        return
+
+    context.user_data["search_name"] = query
+    context.user_data["cross_search"] = True
     await _send_list(update.message, context)
 
 
@@ -45,8 +59,13 @@ async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _send_list(msg, context):
     search_name = context.user_data.get("search_name", "")
+    cross = context.user_data.get("cross_search", False)
     languages_by_id = _get_languages_by_id()
-    data = api_client.search_inventory(search_name, page=1, per_page=20)
+
+    if cross:
+        data = api_client.search_inventory_cross(search_name, page=1, per_page=20)
+    else:
+        data = api_client.search_inventory(search_name, page=1, per_page=20)
 
     if not data or not data.get("items"):
         text = f'No se encontraron resultados para "{search_name}"'
@@ -175,16 +194,40 @@ unknown_handler = MessageHandler(filters.COMMAND, cmd_unknown)
 _help_text = (
     "\U0001f916 <b>CardVault Bot</b>\n\n"
     "Comandos disponibles:\n\n"
-    "/n <i>nombre</i> \u2014 Buscar productos en el inventario\n"
-    "/id <i>numero</i> \u2014 Ver detalle de un item del inventario\n\n"
+    "n <i>texto</i> \u2014 Buscar productos por nombre en el inventario\n"
+    "s <i>texto</i> \u2014 Buscar productos por c\u00f3digo colecci\u00f3n, n\u00famero o nombre\n"
+    "/id <i>numero</i> \u2014 Ver detalle de un item\n\n"
     "Ejemplos:\n"
-    "/n pikachu\n"
-    "/id 42"
+    "n pikachu\n"
+    "s COL 001\n"
+    "/id 42\n\n"
+    "Tambi\u00e9n funciona con /n y /s"
 )
 
 
+@require_auth
 async def cmd_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    _log_direct("INFO", f"[{_user_info(update)}] text: {update.message.text or ''}")
+    text = (update.message.text or "").strip()
+    _log_direct("INFO", f"[{_user_info(update)}] text: {text}")
+
+    # Check for n <query> (no slash)
+    if text.lower().startswith("n ") and len(text) > 2:
+        query = text[2:].strip()
+        if query:
+            context.user_data["search_name"] = query
+            context.user_data["cross_search"] = False
+            await _send_list(update.message, context)
+            return
+
+    # Check for s <query> (no slash)
+    if text.lower().startswith("s ") and len(text) > 2:
+        query = text[2:].strip()
+        if query:
+            context.user_data["search_name"] = query
+            context.user_data["cross_search"] = True
+            await _send_list(update.message, context)
+            return
+
     await update.message.reply_text(_help_text, parse_mode=ParseMode.HTML)
 
 

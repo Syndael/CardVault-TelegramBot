@@ -176,14 +176,68 @@ def get_bot_admin_ids() -> set[int]:
 
 # --- Inventory API ---
 
-def search_inventory(product_name: str, page: int = 1, per_page: int = 8) -> dict | None:
-    return _get("/inventory/", params={
+def _search_inventory(params: dict) -> dict | None:
+    merged = {**params, "all": "1", "sort": "newest"}
+    return _get("/inventory/", params=merged)
+
+
+def search_inventory(product_name: str, page: int = 1, per_page: int = 20) -> dict | None:
+    return _search_inventory({
         "product_name": product_name,
         "page": page,
         "per_page": per_page,
-        "all": "1",
-        "sort": "newest",
     })
+
+
+def search_inventory_cross(query: str, page: int = 1, per_page: int = 20) -> dict | None:
+    tokens = query.strip().split()
+    if not tokens:
+        return {"items": []}
+
+    common_ids = None
+    token_items = []
+
+    for token in tokens:
+        result = _search_inventory({
+            "product_name": token,
+            "page": 1,
+            "per_page": 500,
+        })
+        items = result.get("items", []) if result else []
+        if not items:
+            return {"items": []}
+        token_ids = {item["id"] for item in items}
+        if common_ids is None:
+            common_ids = token_ids
+        else:
+            common_ids &= token_ids
+        token_items.append(items)
+
+    if not common_ids:
+        return {"items": []}
+
+    seen = set()
+    final = []
+    for item in token_items[0]:
+        if item["id"] in common_ids and item["id"] not in seen:
+            seen.add(item["id"])
+            final.append(item)
+
+    total = len(final)
+    start = (page - 1) * per_page
+    paged = final[start:start + per_page]
+
+    return {
+        "items": paged,
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "pages": max(1, (total + per_page - 1) // per_page),
+            "has_next": start + per_page < total,
+            "has_prev": page > 1,
+        }
+    }
 
 
 def get_inventory_item(inventory_id: int) -> dict | None:
