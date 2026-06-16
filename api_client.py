@@ -2,11 +2,16 @@ import httpx
 from datetime import datetime, timezone
 from config import API_BASE_URL, API_USERNAME, API_PASSWORD
 
-TIMEOUT = 10
+TIMEOUT = 15
 
 _token: str | None = None
 _token_expires_at: datetime | None = None
 _SETTINGS_CACHE: dict[str, str] | None = None
+_LANGUAGES_CACHE: list[dict] | None = None
+
+
+def login() -> bool:
+    return _login()
 
 
 def _login() -> bool:
@@ -143,16 +148,6 @@ def get_authorized_telegram_ids() -> set[int]:
     return ids
 
 
-def get_bot_admin_ids() -> set[int]:
-    raw = get_setting("bot.telegram.admin.ids") or ""
-    ids = set()
-    for part in raw.split(","):
-        part = part.strip()
-        if part.isdigit():
-            ids.add(int(part))
-    return ids
-
-
 def add_authorized_telegram_id(telegram_id: int) -> bool:
     current = get_setting("bot.telegram.allowed.ids") or ""
     parts = [p.strip() for p in current.split(",") if p.strip()]
@@ -169,19 +164,101 @@ def remove_authorized_telegram_id(telegram_id: int) -> bool:
     return _upsert_setting("bot.telegram.allowed.ids", ",".join(parts))
 
 
-def catalog_search(query: str = "", page: int = 1, per_page: int = 5) -> dict | None:
-    return _get("/product-catalog/", params={"q": query, "page": page, "per_page": per_page})
+def get_bot_admin_ids() -> set[int]:
+    raw = get_setting("bot.telegram.admin.ids") or ""
+    ids = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.add(int(part))
+    return ids
 
 
-def get_inventory(page: int = 1, per_page: int = 5, **filters) -> dict | None:
-    params = {"page": page, "per_page": per_page}
-    params.update({k: v for k, v in filters.items() if v is not None})
-    return _get("/inventory/", params=params)
+# --- Inventory API ---
+
+def search_inventory(product_name: str, page: int = 1, per_page: int = 8) -> dict | None:
+    return _get("/inventory/", params={
+        "product_name": product_name,
+        "page": page,
+        "per_page": per_page,
+        "all": "1",
+        "sort": "newest",
+    })
 
 
-def get_collections(page: int = 1, per_page: int = 50) -> dict | None:
-    return _get("/collections/", params={"page": page, "per_page": per_page})
+def get_inventory_item(inventory_id: int) -> dict | None:
+    return _get(f"/inventory/{inventory_id}")
+
+
+def get_inventory_urls(inventory_id: int) -> list[dict]:
+    data = _get(f"/inventory-urls/by-inventory/{inventory_id}")
+    if isinstance(data, list):
+        return data
+    return []
 
 
 def get_file_url(file_id: int) -> str:
-    return f"{API_BASE_URL}/product-catalog/files/{file_id}/content"
+    token = _get_token()
+    base = API_BASE_URL.rstrip("/api") if API_BASE_URL.endswith("/api") else API_BASE_URL
+    if token:
+        return f"{base}/api/product-catalog/files/{file_id}/content?token={token}"
+    return f"{base}/api/product-catalog/files/{file_id}/content"
+
+
+def get_languages() -> list[dict]:
+    global _LANGUAGES_CACHE
+    if _LANGUAGES_CACHE is None:
+        data = _get("/languages/", params={"per_page": 100})
+        if data:
+            _LANGUAGES_CACHE = data.get("items", data if isinstance(data, list) else [])
+        else:
+            _LANGUAGES_CACHE = []
+    return _LANGUAGES_CACHE
+
+
+def invalidate_languages_cache():
+    global _LANGUAGES_CACHE
+    _LANGUAGES_CACHE = None
+
+
+def download_file(url: str) -> bytes | None:
+    try:
+        r = httpx.get(url, headers=_headers(), timeout=TIMEOUT)
+        r.raise_for_status()
+        return r.content
+    except Exception:
+        return None
+
+
+def resolve_url(relative_url: str | None) -> str | None:
+    if not relative_url:
+        return None
+    token = _get_token()
+    base = API_BASE_URL.rstrip("/api") if API_BASE_URL.endswith("/api") else API_BASE_URL
+    sep = "&" if "?" in relative_url else "?"
+    if token:
+        return f"{base}{relative_url}{sep}token={token}"
+    return f"{base}{relative_url}"
+
+
+def get_product_tracking(product_id: int) -> list[dict]:
+    items = []
+    page = 1
+    while True:
+        data = _get("/product-price-tracking/", params={"product_id": product_id, "page": page, "per_page": 50})
+        if not data:
+            return items
+        batch = data.get("items", []) if isinstance(data, dict) else []
+        items.extend(batch)
+        if isinstance(data, dict) and not data.get("pagination", {}).get("has_next"):
+            break
+        page += 1
+    return items
+
+
+def get_latest_price(inventory_id: int) -> dict | None:
+    data = _get("/inventory-price-history/", params={"inventory_id": inventory_id, "page": 1, "per_page": 1})
+    if not data:
+        return None
+    items = data.get("items", []) if isinstance(data, dict) else []
+    return items[0] if items else None

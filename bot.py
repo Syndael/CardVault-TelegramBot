@@ -1,18 +1,11 @@
 import logging
+import sys
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    CallbackQueryHandler,
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
 
-from config import TELEGRAM_BOT_TOKEN
-from handlers import (
-    cmd_start, cmd_ayuda, cmd_buscar,
-    cmd_inventario, cmd_colecciones,
-    cmd_adduser, cmd_deluser, cmd_usuarios,
-    callback_handler,
-)
+import api_client
+from handlers import cmd_n, cmd_id, callback_handler, unknown_handler, text_handler
+from user_logger import init_user_logger
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -21,20 +14,31 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
+SETTING_KEY_TOKEN = "bot.telegram.token"
+
 
 def main():
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    if not api_client.login():
+        logger.error("Error al autenticar en la API")
+        sys.exit(1)
+    logger.info("API login OK")
 
-    app.add_handler(CommandHandler("start",       cmd_start))
-    app.add_handler(CommandHandler("ayuda",       cmd_ayuda))
-    app.add_handler(CommandHandler("help",        cmd_ayuda))
-    app.add_handler(CommandHandler("buscar",      cmd_buscar))
-    app.add_handler(CommandHandler("inventario",  cmd_inventario))
-    app.add_handler(CommandHandler("colecciones", cmd_colecciones))
-    app.add_handler(CommandHandler("adduser",     cmd_adduser))
-    app.add_handler(CommandHandler("deluser",     cmd_deluser))
-    app.add_handler(CommandHandler("usuarios",    cmd_usuarios))
+    token = api_client.get_setting(SETTING_KEY_TOKEN)
+    if not token:
+        logger.error(f"Setting '{SETTING_KEY_TOKEN}' no encontrado. Debes crearlo en la API.")
+        sys.exit(1)
+
+    app = ApplicationBuilder().token(token).build()
+
+    log_file = init_user_logger()
+    logger.info("User interaction log: %s", log_file)
+
+    app.add_handler(CommandHandler("n", cmd_n))
+    app.add_handler(CommandHandler("id", cmd_id))
     app.add_handler(CallbackQueryHandler(callback_handler))
+
+    app.add_handler(unknown_handler)
+    app.add_handler(text_handler)
 
     logger.info("CardVault Bot iniciado")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
