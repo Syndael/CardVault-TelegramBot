@@ -115,6 +115,11 @@ def fmt_detail(item: dict, urls: list[dict], languages_by_id: dict[int, dict]) -
             lines.append(f"Total: {float(total):.2f} {currency}")
         if shipping and float(shipping) > 0:
             lines.append(f"Gastos envio: {float(shipping):.2f} {currency}")
+        # Mostrar info de moneda original si existe
+        orig_amount = purchase.get("original_amount")
+        orig_currency = purchase.get("original_currency")
+        if orig_amount and orig_currency:
+            lines.append(f"Importe original: {float(orig_amount):.2f} {orig_currency}")
         if p_notes:
             lines.append(f"Notas compra: {p_notes[:200]}")
 
