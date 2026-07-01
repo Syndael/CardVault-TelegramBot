@@ -109,8 +109,10 @@ def fmt_detail(item: dict, urls: list[dict], languages_by_id: dict[int, dict]) -
         if entity:
             lines.append(f"Tienda: {entity}")
         unit_price = (purchase_item or {}).get("unit_price")
+        split_qty = (purchase_item or {}).get("split_quantity") or 1
         if unit_price is not None:
-            lines.append(f"Precio unitario: {float(unit_price):.2f} {currency}")
+            display_price = float(unit_price) / split_qty
+            lines.append(f"Precio unitario: {display_price:.2f} {currency}" + (f" (repartido entre {split_qty})" if split_qty > 1 else ""))
         if total is not None:
             lines.append(f"Total: {float(total):.2f} {currency}")
         if shipping and float(shipping) > 0:
