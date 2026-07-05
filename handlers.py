@@ -238,11 +238,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "entity_id": entity_id,
             "purchase_date": date.today().isoformat(),
             "notes": notes,
+            "telegram_id": update.effective_user.id,
         }
         if revisar_status_id is not None:
             payload["shipping_status_id"] = revisar_status_id
 
-        result = api_client.create_purchase(payload)
+        result, error = api_client.create_purchase(payload)
         if result:
             purchase_id = result.get("id")
             text = (
@@ -253,7 +254,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Notas: {notes}"
             )
         else:
-            text = "Error al crear la compra. Revisa los datos."
+            text = f"Error al crear la compra: {error}"
 
         await query.edit_message_text(text)
         context.user_data.pop("purchase_notes", None)

@@ -343,8 +343,12 @@ def get_types(type_filter: str = None) -> list[dict]:
     return []
 
 
-def create_purchase(data: dict) -> dict | None:
+def create_purchase(data: dict) -> tuple[dict | None, str | None]:
     r = _post("/purchases/", data)
-    if r and r.status_code < 300:
-        return r.json()
-    return None
+    if r is None:
+        return None, "Error de conexión con la API"
+    if r.status_code < 300:
+        return r.json(), None
+    body = r.json()
+    error = body.get("error") or body.get("message") or f"HTTP {r.status_code}"
+    return None, error
