@@ -1,4 +1,6 @@
-from telegram import Update
+from datetime import date
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, filters
 from telegram.ext import MessageHandler
@@ -172,6 +174,44 @@ async def _send_detail(msg, context, inv_id: int):
     await msg.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 
+@require_auth
+async def cmd_compra(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = " ".join(context.args) if context.args else ""
+    _log_direct("INFO", f"[{_user_info(update)}] /compra {query}")
+    if not query:
+        await update.message.reply_text("Uso: /compra <notas de la compra>")
+        return
+
+    context.user_data["purchase_notes"] = query
+    await _ask_store(update.message, context)
+
+
+async def _ask_store(msg, context):
+    types_data = api_client.get_types("entity")
+    store_type_id = None
+    for t in types_data:
+        if t.get("name") == "store":
+            store_type_id = t["id"]
+            break
+
+    if store_type_id is None:
+        await msg.reply_text("No se encontró el tipo 'store' en la base de datos.")
+        return
+
+    stores = api_client.get_entities(store_type_id)
+    if not stores:
+        await msg.reply_text("No hay tiendas registradas. Crea una desde la web.")
+        return
+
+    buttons = []
+    for s in stores:
+        name = s.get("name", f"Tienda #{s['id']}")
+        buttons.append([InlineKeyboardButton(name, callback_data=f"store:{s['id']}")])
+
+    kb = InlineKeyboardMarkup(buttons)
+    await msg.reply_text("Selecciona la tienda:", reply_markup=kb)
+
+
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -181,6 +221,42 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("d:"):
         inv_id = int(data.split(":")[1])
         await _send_detail(query.message, context, inv_id)
+
+    elif data.startswith("store:"):
+        entity_id = int(data.split(":")[1])
+        notes = context.user_data.get("purchase_notes", "")
+
+        # Look up "Revisar" status
+        revisar_status_id = None
+        p_statuses = api_client.get_types("p_status")
+        for st in p_statuses:
+            if st.get("name") == "Revisar":
+                revisar_status_id = st["id"]
+                break
+
+        payload = {
+            "entity_id": entity_id,
+            "purchase_date": date.today().isoformat(),
+            "notes": notes,
+        }
+        if revisar_status_id is not None:
+            payload["shipping_status_id"] = revisar_status_id
+
+        result = api_client.create_purchase(payload)
+        if result:
+            purchase_id = result.get("id")
+            text = (
+                f"Compra #{purchase_id} creada con éxito.\n"
+                f"Tienda: {result.get('entity', {}).get('name', '?')}\n"
+                f"Fecha: {payload['purchase_date']}\n"
+                f"Estado: Revisar\n"
+                f"Notas: {notes}"
+            )
+        else:
+            text = "Error al crear la compra. Revisa los datos."
+
+        await query.edit_message_text(text)
+        context.user_data.pop("purchase_notes", None)
 
 
 async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -196,12 +272,14 @@ _help_text = (
     "Comandos disponibles:\n\n"
     "n <i>texto</i> \u2014 Buscar productos por nombre en el inventario\n"
     "s <i>texto</i> \u2014 Buscar productos por c\u00f3digo colecci\u00f3n, n\u00famero o nombre\n"
-    "/id <i>numero</i> \u2014 Ver detalle de un item\n\n"
+    "/id <i>numero</i> \u2014 Ver detalle de un item\n"
+    "compra <i>texto</i> \u2014 Crear una compra con las notas indicadas\n\n"
     "Ejemplos:\n"
     "n pikachu\n"
     "s COL 001\n"
-    "/id 42\n\n"
-    "Tambi\u00e9n funciona con /n y /s"
+    "/id 42\n"
+    "compra 3 sobres Paldea Evolved\n\n"
+    "Tambi\u00e9n funciona con /n, /s y /compra"
 )
 
 
@@ -227,6 +305,12 @@ async def cmd_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["cross_search"] = True
             await _send_list(update.message, context)
             return
+
+    # Check for compra <texto> (no slash)
+    if text.lower().startswith("compra ") and len(text) > 7:
+        context.user_data["purchase_notes"] = text[7:].strip()
+        await _ask_store(update.message, context)
+        return
 
     await update.message.reply_text(_help_text, parse_mode=ParseMode.HTML)
 

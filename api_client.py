@@ -321,3 +321,30 @@ def get_latest_price(inventory_id: int) -> dict | None:
         return None
     items = data.get("items", []) if isinstance(data, dict) else []
     return items[0] if items else None
+
+
+def get_entities(entity_type_id: int = None) -> list[dict]:
+    params = {"per_page": 200}
+    if entity_type_id is not None:
+        params["entity_type"] = entity_type_id
+    data = _get("/entities/", params=params)
+    if data:
+        return data.get("items", [])
+    return []
+
+
+def get_types(type_filter: str = None) -> list[dict]:
+    params = {"per_page": 50}
+    if type_filter:
+        params["type"] = type_filter
+    data = _get("/types/", params=params)
+    if data:
+        return data.get("items", [])
+    return []
+
+
+def create_purchase(data: dict) -> dict | None:
+    r = _post("/purchases/", data)
+    if r and r.status_code < 300:
+        return r.json()
+    return None
